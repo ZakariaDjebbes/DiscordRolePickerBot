@@ -1,0 +1,83 @@
+{
+  "channelId": "000000000000000001",
+
+  "groups": [
+    {
+      "key": "combat-role",
+      "label": "Combat Role",
+      "description": "What you play in raids and dungeons.",
+      "mode": "multi",
+      "roles": [
+        { "key": "tank", "label": "Tank", "emoji": "🛡️", "discordRoleId": "000000000000000011" },
+        { "key": "healer", "label": "Healer", "emoji": "💚", "discordRoleId": "000000000000000012" },
+        { "key": "dps", "label": "DPS", "emoji": "⚔️", "discordRoleId": "000000000000000013" }
+      ]
+    },
+
+    {
+      "key": "faction",
+      "label": "Faction",
+      "description": "Which side you play.",
+      "mode": "exclusive",
+      "roles": [
+        { "key": "alliance", "label": "Alliance", "emoji": "🔵", "discordRoleId": "000000000000000021" },
+        { "key": "horde", "label": "Horde", "emoji": "🔴", "discordRoleId": "000000000000000022" }
+      ]
+    },
+
+    {
+      "key": "languages",
+      "label": "Languages",
+      "description": "Languages you are happy to be pinged in.",
+      "mode": "multi",
+      "display": "dropdown",
+      "roles": [
+        { "key": "en", "label": "English", "emoji": "🇬🇧", "discordRoleId": "000000000000000031" },
+        { "key": "fr", "label": "Français", "emoji": "🇫🇷", "discordRoleId": "000000000000000032" },
+        { "key": "de", "label": "Deutsch", "emoji": "🇩🇪", "discordRoleId": "000000000000000033" },
+        { "key": "es", "label": "Español", "emoji": "🇪🇸", "discordRoleId": "000000000000000034" }
+      ]
+    },
+
+    {
+      "key": "commitment",
+      "label": "Raid Commitment",
+      "description": "Sets expectations when we build groups.",
+      "mode": "exclusive",
+      "required": true,
+      "roles": [
+        {
+          "key": "casual",
+          "label": "Casual",
+          "description": "Here for fun, no fixed schedule",
+          "discordRoleId": "000000000000000041"
+        },
+        {
+          "key": "semi-hardcore",
+          "label": "Semi-hardcore",
+          "description": "One or two raid nights a week",
+          "discordRoleId": "000000000000000042"
+        },
+        {
+          "key": "hardcore",
+          "label": "Hardcore",
+          "description": "Progression raiding, full attendance",
+          "discordRoleId": "000000000000000043"
+        }
+      ]
+    },
+
+    {
+      "key": "main-spec",
+      "label": "Main Specs",
+      "description": "Pick up to two you are geared for.",
+      "mode": "multi",
+      "maxSelections": 2,
+      "roles": [
+        { "key": "prot", "label": "Protection", "discordRoleId": "000000000000000051" },
+        { "key": "holy", "label": "Holy", "discordRoleId": "000000000000000052" },
+        { "key": "ret", "label": "Retribution", "discordRoleId": "000000000000000053" }
+      ]
+    }
+  ]
+}
