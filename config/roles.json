@@ -1,0 +1,16 @@
+{
+  "channelId": "1551684426692436058",
+  "groups": [
+    {
+      "key": "combat-role",
+      "label": "Combat Role",
+      "description": "What you play in raids and dungeons.",
+      "mode": "multi",
+      "roles": [
+        { "key": "tank", "label": "Tank", "emoji": "🛡️", "discordRoleId": "1551692400349417492" },
+        { "key": "healer", "label": "Healer", "emoji": "💚", "discordRoleId": "1543745983790457044" },
+        { "key": "dps", "label": "DPS", "emoji": "⚔️", "discordRoleId": "1551692472210686156" }
+      ]
+    }
+  ]
+}
