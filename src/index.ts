@@ -2,7 +2,7 @@ import { Client, Events, GatewayIntentBits } from "discord.js";
 import { loadEnv } from "./config/env.js";
 import { loadConfig } from "./config/load.js";
 import { handleCommand } from "./bot/commands.js";
-import { checkHierarchy } from "./bot/hierarchy.js";
+import { checkSetupReadiness } from "./bot/hierarchy.js";
 import { handleInteraction } from "./bot/interactions.js";
 import { JsonFileStateStore } from "./state/store.js";
 
@@ -25,8 +25,8 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Surface the hierarchy problem at boot rather than on a member's click.
-    for (const problem of checkHierarchy(guild, config)) {
+    // Surface setup problems at boot rather than on a member's first click.
+    for (const problem of await checkSetupReadiness(guild, config)) {
       console.warn(`[rolepicker] ${problem.message}`);
     }
   });

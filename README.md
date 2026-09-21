@@ -40,6 +40,12 @@ in the configured channel.
    Roles. Discord refuses to let a bot assign a role at or above its own
    position, and this is the single most common reason a role picker appears to
    do nothing. `/rolepicker check` verifies this for every configured role.
+5. **Check the picker channel's own permissions.** Right-click the channel →
+   Edit Channel → Permissions, and make sure the bot has **View Channel**,
+   **Send Messages** and **Embed Links** there. Channel overwrites override what
+   the invite link granted, and the picker posts embeds — so `Embed Links` is
+   required even though ordinary messages would go through without it.
+   `/rolepicker check` verifies this too.
 
 ## Configuration
 

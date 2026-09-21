@@ -1,4 +1,5 @@
 import {
+  DiscordAPIError,
   MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
@@ -7,7 +8,7 @@ import {
 import type { RolePickerConfig } from "../config/types.js";
 import type { StateStore } from "../state/store.js";
 import { heldRoles } from "../core/selection.js";
-import { checkHierarchy } from "./hierarchy.js";
+import { checkSetupReadiness } from "./hierarchy.js";
 import { runSetup } from "./setup.js";
 
 export const rolePickerCommand = new SlashCommandBuilder()
@@ -64,7 +65,7 @@ async function handleSetup(
 
   // Posting a picker whose roles the bot cannot grant just moves the failure to
   // the first member who clicks, so refuse up front.
-  const problems = checkHierarchy(guild, config);
+  const problems = await checkSetupReadiness(guild, config);
   if (problems.length > 0) {
     await interaction.editReply(
       ["Setup stopped — fix these first:", ...problems.map((p) => `• ${p.message}`)].join("\n"),
@@ -84,6 +85,14 @@ async function handleSetup(
     }
     await interaction.editReply(lines.join("\n"));
   } catch (error) {
+    // The preflight above catches this in the normal case; a permission changed
+    // mid-run still deserves better than Discord's bare "Missing Permissions".
+    if (error instanceof DiscordAPIError && error.code === 50013) {
+      await interaction.editReply(
+        `Setup failed: Discord refused to let the bot post in <#${config.channelId}>. Check the channel's own permissions (Edit Channel -> Permissions) for "View Channel", "Send Messages" and "Embed Links" — channel overwrites beat the invite link's permissions.`,
+      );
+      return;
+    }
     await interaction.editReply(`Setup failed: ${(error as Error).message}`);
   }
 }
@@ -101,15 +110,17 @@ async function handleCheck(
     return;
   }
 
-  const problems = checkHierarchy(guild, config);
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const problems = await checkSetupReadiness(guild, config);
   const roleCount = config.groups.reduce((total, group) => total + group.roles.length, 0);
 
   const content =
     problems.length === 0
-      ? `All good — ${config.groups.length} group(s), ${roleCount} role(s), all assignable.`
+      ? `All good — ${config.groups.length} group(s), ${roleCount} role(s), all assignable, and the bot can post in <#${config.channelId}>.`
       : ["Problems found:", ...problems.map((p) => `• ${p.message}`)].join("\n");
 
-  await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+  await interaction.editReply(content);
 }
 
 async function handleMine(

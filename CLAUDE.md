@@ -118,6 +118,12 @@ Discord server rather than in CI.
   a 403 that looks like the bot doing nothing. `src/bot/hierarchy.ts` checks
   this at boot and blocks `/rolepicker setup`; `/rolepicker check` reports it on
   demand. Keep that check ahead of anything that posts a picker.
+- **Channel permission overwrites beat the invite link.** A bot with server-wide
+  Send Messages can still be locked out of one channel, and posting an embed
+  needs `EmbedLinks` on top of `SendMessages`. `checkChannelAccess` covers this;
+  `checkSetupReadiness` runs it together with the role checks, and boot, setup
+  and check all call that one function. Add new preconditions there so all three
+  stay in step.
 - **Exclusive groups remove roles the member did not ask to lose.** The
   ephemeral confirmation must name them — `describePlan` does this, and the
   wording is asserted in tests. Do not reduce it to a bare "Done".
