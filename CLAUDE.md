@@ -14,6 +14,17 @@ npm start                 # node dist/index.js (requires build)
 npm run deploy-commands   # register /rolepicker in the configured guild
 ```
 
+Docker (see README for the full deployment notes):
+
+```bash
+docker compose up -d --build
+docker compose run --rm bot node dist/scripts/deploy-commands.js
+```
+
+In the runtime image `npm run deploy-commands` does **not** work — it runs
+through `tsx`, a devDependency pruned by `npm ci --omit=dev`. Use the compiled
+`dist/scripts/deploy-commands.js` instead.
+
 Run a single test file, or filter by name:
 
 ```bash
@@ -132,6 +143,11 @@ Discord server rather than in CI.
   runs again.
 - **Setup does not delete anything.** Groups dropped from the config are
   reported as orphaned; removing the message is an admin's call.
+- **The state file must survive container recreation.** In Docker it lives on
+  the `picker-state` named volume. Losing it does not break anything loudly —
+  the next `/rolepicker setup` simply posts a second set of picker messages
+  instead of editing the first, and both keep working. Anything that changes
+  where state lives needs to keep this guarantee.
 
 ## Project state
 

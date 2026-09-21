@@ -137,6 +137,58 @@ The state store sits behind an interface, so moving group configuration from a
 file into a database — and editing it from Discord instead of a redeploy — does
 not touch the core.
 
+## Running with Docker
+
+The bot only makes outbound connections to Discord's gateway, so there is no
+port to publish and nothing to put behind a reverse proxy.
+
+```bash
+cp .env.example .env                              # token, client ID, guild ID
+cp config/roles.example.json config/roles.json    # must exist before first up
+docker compose up -d --build
+docker compose logs -f
+```
+
+Register the slash commands once. Inside the image this is the compiled script,
+not `npm run deploy-commands` — that runs through `tsx`, which is a
+devDependency and is not present in the runtime image:
+
+```bash
+docker compose run --rm bot node dist/scripts/deploy-commands.js
+```
+
+After a config change, restart and re-run setup in Discord:
+
+```bash
+docker compose restart
+```
+
+### What persists
+
+| Path | Mount | Why |
+| --- | --- | --- |
+| `config/roles.json` | bind, read-only | Read at startup; edit it on the host |
+| `/app/data` | named volume `picker-state` | Written at runtime |
+
+⚠️ **The `picker-state` volume must survive container recreation.** It maps each
+group to the message holding its picker. Lose it and the next
+`/rolepicker setup` posts a *second* set of picker messages instead of editing
+the existing ones — both sets keep working, so the channel quietly fills with
+duplicates. `docker compose down` keeps the volume; `docker compose down -v`
+deletes it.
+
+⚠️ **Create `config/roles.json` before the first `up`.** Docker creates a
+*directory* at a bind-mount source that does not exist, and the bot then fails
+with a confusing read error.
+
+The image runs as the unprivileged `node` user, and `/app/data` is created with
+that ownership so the named volume inherits it. If you swap the volume for a
+bind mount, make sure the host directory is writable by UID 1000.
+
+There is deliberately **no healthcheck**: there is no endpoint to probe, and a
+gateway bot can be silently disconnected while the process still looks alive.
+discord.js reconnects on its own, and `restart: unless-stopped` covers crashes.
+
 ## Development
 
 ```bash
