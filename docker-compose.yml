@@ -1,0 +1,34 @@
+services:
+  bot:
+    build: .
+    image: discord-role-picker-bot
+    restart: unless-stopped
+
+    # Read from a .env file beside this compose file, or from the shell.
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?set DISCORD_TOKEN in .env}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID in .env}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?set DISCORD_GUILD_ID in .env}
+
+    volumes:
+      # Edit roles on the host; the container only reads them.
+      - ./config/roles.json:/app/config/roles.json:ro
+      # Which message holds which group's picker. Losing this makes the next
+      # `/rolepicker setup` post duplicate messages instead of editing the
+      # existing ones, so it must outlive the container.
+      - picker-state:/app/data
+
+    # No ports: the gateway connection is outbound only.
+
+    # No healthcheck: there is no endpoint to probe, and a gateway bot can be
+    # silently disconnected while the process still looks alive. discord.js
+    # reconnects on its own; restart: unless-stopped covers real crashes.
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  picker-state:
