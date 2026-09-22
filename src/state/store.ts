@@ -2,8 +2,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /**
- * Remembers which message holds which group's picker, so `/rolepicker setup`
- * edits in place instead of posting duplicates every time it runs.
+ * Remembers which message holds which group's picker, and which Discord role
+ * the bot created for a config role.
+ *
+ * The message IDs let `/rolepicker setup` edit in place instead of posting
+ * duplicates. The role IDs are what make a config role without an explicit
+ * `discordRoleId` survive being renamed in Discord: after the first
+ * resolution, the link is by ID rather than by name.
  *
  * Behind an interface because the obvious next step is a real database once
  * groups are editable from Discord rather than from a file.
@@ -14,11 +19,21 @@ export interface StateStore {
   /** Groups that have a posted message but are no longer in the config. */
   orphanedGroupKeys(configuredKeys: readonly string[]): Promise<string[]>;
   forget(groupKey: string): Promise<void>;
+
+  getRoleId(groupKey: string, roleKey: string): Promise<string | undefined>;
+  setRoleId(groupKey: string, roleKey: string, roleId: string): Promise<void>;
+  forgetRole(groupKey: string, roleKey: string): Promise<void>;
 }
 
 interface StateFile {
   /** groupKey -> message ID */
   messages: Record<string, string>;
+  /** "groupKey:roleKey" -> Discord role ID */
+  roles: Record<string, string>;
+}
+
+function roleKeyOf(groupKey: string, roleKey: string): string {
+  return `${groupKey}:${roleKey}`;
 }
 
 export class JsonFileStateStore implements StateStore {
@@ -35,15 +50,16 @@ export class JsonFileStateStore implements StateStore {
     if (this.#cache !== undefined) return this.#cache;
     try {
       const parsed: unknown = JSON.parse(await readFile(this.#path, "utf8"));
-      const messages =
-        typeof parsed === "object" && parsed !== null && "messages" in parsed
-          ? (parsed as StateFile).messages
-          : {};
-      this.#cache = { messages: messages ?? {} };
+      const record = (typeof parsed === "object" && parsed !== null ? parsed : {}) as Partial<StateFile>;
+      this.#cache = {
+        messages: record.messages ?? {},
+        roles: record.roles ?? {},
+      };
     } catch {
-      // No state file yet, or it is unreadable: start clean. Losing it only
-      // means the next setup posts fresh messages.
-      this.#cache = { messages: {} };
+      // No state file yet, or it is unreadable: start clean. Losing it means
+      // the next setup posts fresh messages and falls back to matching roles
+      // by name.
+      this.#cache = { messages: {}, roles: {} };
     }
     return this.#cache;
   }
@@ -78,6 +94,22 @@ export class JsonFileStateStore implements StateStore {
   async forget(groupKey: string): Promise<void> {
     await this.#write((state) => {
       delete state.messages[groupKey];
+    });
+  }
+
+  async getRoleId(groupKey: string, roleKey: string): Promise<string | undefined> {
+    return (await this.#read()).roles[roleKeyOf(groupKey, roleKey)];
+  }
+
+  async setRoleId(groupKey: string, roleKey: string, roleId: string): Promise<void> {
+    await this.#write((state) => {
+      state.roles[roleKeyOf(groupKey, roleKey)] = roleId;
+    });
+  }
+
+  async forgetRole(groupKey: string, roleKey: string): Promise<void> {
+    await this.#write((state) => {
+      delete state.roles[roleKeyOf(groupKey, roleKey)];
     });
   }
 }

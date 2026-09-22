@@ -2,4 +2,9 @@ node_modules/
 dist/
 .env
 data/
+# Logs record Discord usernames and IDs, so they stay out of the repository.
+# The directory itself is kept, so the Docker bind mount does not get created
+# as root and lock out the container's unprivileged user.
+logs/*
+!logs/.gitkeep
 *.log

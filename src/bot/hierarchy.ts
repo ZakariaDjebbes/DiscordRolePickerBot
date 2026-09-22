@@ -1,5 +1,5 @@
 import { ChannelType, PermissionFlagsBits, type Guild } from "discord.js";
-import type { RolePickerConfig } from "../config/types.js";
+import type { ResolvedConfig, RolePickerConfig } from "../config/types.js";
 
 export interface HierarchyProblem {
   kind:
@@ -93,7 +93,7 @@ export async function checkChannelAccess(
  */
 export async function checkSetupReadiness(
   guild: Guild,
-  config: RolePickerConfig,
+  config: ResolvedConfig,
 ): Promise<HierarchyProblem[]> {
   return [...checkHierarchy(guild, config), ...(await checkChannelAccess(guild, config))];
 }
@@ -106,7 +106,7 @@ export async function checkSetupReadiness(
  */
 export function checkHierarchy(
   guild: Guild,
-  config: RolePickerConfig,
+  config: ResolvedConfig,
 ): HierarchyProblem[] {
   const problems: HierarchyProblem[] = [];
   const me = guild.members.me;

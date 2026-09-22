@@ -7,10 +7,13 @@ import {
   StringSelectMenuOptionBuilder,
 } from "discord.js";
 import {
+  DEFAULT_EMBED_COLOR,
   DISCORD_LIMITS,
+  hexToInt,
   resolveDisplay,
   resolveMaxSelections,
-  type RoleGroup,
+  type ResolvedGroup,
+  type RoleButtonStyle,
 } from "../config/types.js";
 import { buttonId, menuId } from "./customId.js";
 
@@ -23,12 +26,27 @@ export interface PickerMessagePayload {
   components: (ActionRowBuilder<ButtonBuilder> | ActionRowBuilder<StringSelectMenuBuilder>)[];
 }
 
+const BUTTON_STYLES: Record<RoleButtonStyle, ButtonStyle> = {
+  primary: ButtonStyle.Primary,
+  secondary: ButtonStyle.Secondary,
+  success: ButtonStyle.Success,
+  danger: ButtonStyle.Danger,
+};
+
+const DEFAULT_FOOTER = "Only you can see your changes.";
+
 /**
  * One group renders as one message, so adding a group later posts a new message
  * and leaves the existing ones — and everyone's scroll position — alone.
  */
-export function renderGroup(group: RoleGroup): PickerMessagePayload {
-  const embed = new EmbedBuilder().setTitle(group.label).setDescription(bodyText(group));
+export function renderGroup(group: ResolvedGroup): PickerMessagePayload {
+  const embed = new EmbedBuilder()
+    .setTitle(group.label)
+    .setDescription(bodyText(group))
+    .setColor(hexToInt(group.color ?? DEFAULT_EMBED_COLOR))
+    .setFooter({ text: group.footer ?? DEFAULT_FOOTER });
+
+  if (group.thumbnail !== undefined) embed.setThumbnail(group.thumbnail);
 
   return {
     embeds: [embed],
@@ -38,35 +56,49 @@ export function renderGroup(group: RoleGroup): PickerMessagePayload {
 }
 
 /** Spells out the group's rule so members are not left guessing. */
-export function rulesLine(group: RoleGroup): string {
+export function rulesLine(group: ResolvedGroup): string {
   const max = resolveMaxSelections(group);
   const required = group.required === true;
+  const verb = resolveDisplay(group) === "dropdown" ? "Choose" : "Click to toggle";
 
   if (max === 1) {
-    return required ? "Pick one — this one is required." : "Pick one.";
+    return required ? `${verb} — one required.` : `${verb} — one only.`;
   }
   if (max >= group.roles.length) {
-    return required
-      ? "Pick as many as apply — at least one is required."
-      : "Pick as many as apply.";
+    return required ? `${verb} — as many as apply, at least one.` : `${verb} — as many as apply.`;
   }
-  return required ? `Pick up to ${max} — at least one is required.` : `Pick up to ${max}.`;
+  return required ? `${verb} — up to ${max}, at least one.` : `${verb} — up to ${max}.`;
 }
 
-function bodyText(group: RoleGroup): string {
-  const action =
-    resolveDisplay(group) === "dropdown"
-      ? "Use the menu below; your choice replaces whatever you had."
-      : "Click a button to add or remove it.";
-  return [group.description, rulesLine(group), action].filter(Boolean).join("\n");
+/**
+ * Group description, the rule, and the per-role descriptions.
+ *
+ * Buttons have no room for a role description, so in button mode they are
+ * listed here instead of being dropped.
+ */
+function bodyText(group: ResolvedGroup): string {
+  const parts = [group.description, rulesLine(group)].filter(Boolean) as string[];
+
+  if (resolveDisplay(group) === "buttons") {
+    const described = group.roles.filter((role) => role.description !== undefined);
+    if (described.length > 0) {
+      parts.push(
+        described
+          .map((role) => `${role.emoji ?? "•"} **${role.label}** — ${role.description}`)
+          .join("\n"),
+      );
+    }
+  }
+
+  return parts.join("\n\n");
 }
 
-function buttonRows(group: RoleGroup): ActionRowBuilder<ButtonBuilder>[] {
+function buttonRows(group: ResolvedGroup): ActionRowBuilder<ButtonBuilder>[] {
   const buttons = group.roles.map((role) => {
     const button = new ButtonBuilder()
       .setCustomId(buttonId(group.key, role.key))
       .setLabel(role.label)
-      .setStyle(ButtonStyle.Secondary);
+      .setStyle(BUTTON_STYLES[role.style ?? "secondary"]);
     if (role.emoji !== undefined) button.setEmoji(role.emoji);
     return button;
   });
@@ -82,7 +114,7 @@ function buttonRows(group: RoleGroup): ActionRowBuilder<ButtonBuilder>[] {
   return rows;
 }
 
-function menuRow(group: RoleGroup): ActionRowBuilder<StringSelectMenuBuilder> {
+function menuRow(group: ResolvedGroup): ActionRowBuilder<StringSelectMenuBuilder> {
   const options = group.roles.map((role) => {
     const option = new StringSelectMenuOptionBuilder()
       .setLabel(role.label)

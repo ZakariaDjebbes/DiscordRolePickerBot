@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { RoleGroup } from "../config/types.js";
-import { describePlan, planButtonClick, planMenuSubmit } from "./selection.js";
+import type { ResolvedGroup } from "../config/types.js";
+import {
+  describePlan,
+  describePlanWithState,
+  formatGroupState,
+  planButtonClick,
+  planMenuSubmit,
+  rolesAfterPlan,
+} from "./selection.js";
 
 const TANK = "100000000000000001";
 const HEALER = "100000000000000002";
@@ -9,7 +16,7 @@ const DPS = "100000000000000003";
 const ALLIANCE = "200000000000000001";
 const HORDE = "200000000000000002";
 
-const combat: RoleGroup = {
+const combat: ResolvedGroup = {
   key: "combat-role",
   label: "Combat Role",
   mode: "multi",
@@ -20,7 +27,7 @@ const combat: RoleGroup = {
   ],
 };
 
-const faction: RoleGroup = {
+const faction: ResolvedGroup = {
   key: "faction",
   label: "Faction",
   mode: "exclusive",
@@ -77,7 +84,7 @@ describe("planButtonClick — exclusive groups", () => {
   });
 
   it("refuses to clear the last pick when the group is required", () => {
-    const required: RoleGroup = { ...faction, required: true };
+    const required: ResolvedGroup = { ...faction, required: true };
     const plan = planButtonClick(required, [HORDE], "horde");
     assert.ok(plan.rejection?.includes("required"));
     assert.deepEqual(plan.add, []);
@@ -85,7 +92,7 @@ describe("planButtonClick — exclusive groups", () => {
   });
 
   it("still swaps in a required group", () => {
-    const required: RoleGroup = { ...faction, required: true };
+    const required: ResolvedGroup = { ...faction, required: true };
     const plan = planButtonClick(required, [ALLIANCE], "horde");
     assert.deepEqual(plan.add, [HORDE]);
     assert.deepEqual(plan.remove, [ALLIANCE]);
@@ -93,7 +100,7 @@ describe("planButtonClick — exclusive groups", () => {
 });
 
 describe("planButtonClick — capped groups", () => {
-  const twoSpecs: RoleGroup = { ...combat, maxSelections: 2 };
+  const twoSpecs: ResolvedGroup = { ...combat, maxSelections: 2 };
 
   it("allows picks up to the cap", () => {
     const plan = planButtonClick(twoSpecs, [TANK], "healer");
@@ -183,5 +190,71 @@ describe("describePlan", () => {
   it("passes a rejection straight through", () => {
     const plan = planButtonClick({ ...faction, required: true }, [HORDE], "horde");
     assert.equal(describePlan(faction, plan), plan.rejection);
+  });
+});
+
+describe("rolesAfterPlan", () => {
+  it("applies removals and additions", () => {
+    const next = rolesAfterPlan([TANK, HEALER], { add: [DPS], remove: [TANK] });
+    assert.deepEqual([...next].sort(), [DPS, HEALER].sort());
+  });
+
+  it("leaves roles from other groups alone", () => {
+    const next = rolesAfterPlan([ALLIANCE, TANK], { add: [], remove: [TANK] });
+    assert.deepEqual([...next], [ALLIANCE]);
+  });
+});
+
+describe("formatGroupState", () => {
+  it("ticks held roles and leaves the rest blank", () => {
+    assert.equal(
+      formatGroupState(combat, [TANK, DPS]),
+      "✅ Tank · ⬜ Healer · ✅ DPS",
+    );
+  });
+
+  it("shows an empty group as all unticked", () => {
+    assert.equal(formatGroupState(combat, []), "⬜ Tank · ⬜ Healer · ⬜ DPS");
+  });
+
+  it("keeps config order regardless of the order roles are held in", () => {
+    assert.equal(
+      formatGroupState(combat, [DPS, TANK, HEALER]),
+      "✅ Tank · ✅ Healer · ✅ DPS",
+    );
+  });
+});
+
+describe("describePlanWithState", () => {
+  it("appends the resulting picks, not the ones held before", () => {
+    const plan = planButtonClick(combat, [TANK], "healer");
+    assert.equal(
+      describePlanWithState(combat, plan, [TANK]),
+      "Added **Healer** to your **Combat Role**.\nNow: ✅ Tank · ✅ Healer · ⬜ DPS",
+    );
+  });
+
+  it("reflects a removal", () => {
+    const plan = planButtonClick(combat, [TANK, HEALER], "tank");
+    assert.equal(
+      describePlanWithState(combat, plan, [TANK, HEALER]),
+      "Removed **Tank** from your **Combat Role**.\n" +
+        "Now: ⬜ Tank · ✅ Healer · ⬜ DPS",
+    );
+  });
+
+  it("reflects an exclusive swap", () => {
+    const plan = planButtonClick(faction, [ALLIANCE], "horde");
+    assert.equal(
+      describePlanWithState(faction, plan, [ALLIANCE]),
+      "Set your **Faction** to **Horde** (removed **Alliance**).\nNow: ⬜ Alliance · ✅ Horde",
+    );
+  });
+
+  it("adds no state line to a rejection", () => {
+    const plan = planButtonClick({ ...faction, required: true }, [HORDE], "horde");
+    const message = describePlanWithState(faction, plan, [HORDE]);
+    assert.equal(message, plan.rejection);
+    assert.ok(!message.includes("Now:"));
   });
 });

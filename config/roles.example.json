@@ -7,10 +7,32 @@
       "label": "Combat Role",
       "description": "What you play in raids and dungeons.",
       "mode": "multi",
+      "color": "#C69B6D",
       "roles": [
-        { "key": "tank", "label": "Tank", "emoji": "🛡️", "discordRoleId": "000000000000000011" },
-        { "key": "healer", "label": "Healer", "emoji": "💚", "discordRoleId": "000000000000000012" },
-        { "key": "dps", "label": "DPS", "emoji": "⚔️", "discordRoleId": "000000000000000013" }
+        {
+          "key": "tank",
+          "label": "Tank",
+          "emoji": "🛡️",
+          "style": "primary",
+          "description": "Hold threat and take the hits",
+          "discordRoleId": "000000000000000011"
+        },
+        {
+          "key": "healer",
+          "label": "Healer",
+          "emoji": "💚",
+          "style": "success",
+          "description": "Keep the group alive",
+          "discordRoleId": "000000000000000012"
+        },
+        {
+          "key": "dps",
+          "label": "DPS",
+          "emoji": "⚔️",
+          "style": "danger",
+          "description": "Deal damage",
+          "discordRoleId": "000000000000000013"
+        }
       ]
     },
 
@@ -19,23 +41,23 @@
       "label": "Faction",
       "description": "Which side you play.",
       "mode": "exclusive",
+      "color": "#0070DD",
       "roles": [
-        { "key": "alliance", "label": "Alliance", "emoji": "🔵", "discordRoleId": "000000000000000021" },
-        { "key": "horde", "label": "Horde", "emoji": "🔴", "discordRoleId": "000000000000000022" }
+        { "key": "alliance", "label": "Alliance", "emoji": "🔵", "style": "primary", "discordRoleId": "000000000000000021" },
+        { "key": "horde", "label": "Horde", "emoji": "🔴", "style": "danger", "discordRoleId": "000000000000000022" }
       ]
     },
 
     {
       "key": "languages",
       "label": "Languages",
-      "description": "Languages you are happy to be pinged in.",
+      "description": "Languages you're happy to be pinged in.",
       "mode": "multi",
-      "display": "dropdown",
+      "color": "#1ABC9C",
       "roles": [
-        { "key": "en", "label": "English", "emoji": "🇬🇧", "discordRoleId": "000000000000000031" },
-        { "key": "fr", "label": "Français", "emoji": "🇫🇷", "discordRoleId": "000000000000000032" },
-        { "key": "de", "label": "Deutsch", "emoji": "🇩🇪", "discordRoleId": "000000000000000033" },
-        { "key": "es", "label": "Español", "emoji": "🇪🇸", "discordRoleId": "000000000000000034" }
+        { "key": "en", "label": "English", "emoji": "🇬🇧", "color": "#3498DB" },
+        { "key": "fr", "label": "Français", "emoji": "🇫🇷", "color": "#9B59B6" },
+        { "key": "ar", "label": "العربية", "emoji": "🇸🇦", "color": "#1ABC9C" }
       ]
     },
 
@@ -45,6 +67,7 @@
       "description": "Sets expectations when we build groups.",
       "mode": "exclusive",
       "required": true,
+      "color": "#A335EE",
       "roles": [
         {
           "key": "casual",
@@ -62,6 +85,7 @@
           "key": "hardcore",
           "label": "Hardcore",
           "description": "Progression raiding, full attendance",
+          "hoist": true,
           "discordRoleId": "000000000000000043"
         }
       ]
@@ -73,6 +97,7 @@
       "description": "Pick up to two you are geared for.",
       "mode": "multi",
       "maxSelections": 2,
+      "color": "#FF7C0A",
       "roles": [
         { "key": "prot", "label": "Protection", "discordRoleId": "000000000000000051" },
         { "key": "holy", "label": "Holy", "discordRoleId": "000000000000000052" },

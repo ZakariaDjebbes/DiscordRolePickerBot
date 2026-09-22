@@ -6,10 +6,62 @@
       "label": "Combat Role",
       "description": "What you play in raids and dungeons.",
       "mode": "multi",
+      "color": "#C69B6D",
       "roles": [
-        { "key": "tank", "label": "Tank", "emoji": "🛡️", "discordRoleId": "1551692400349417492" },
-        { "key": "healer", "label": "Healer", "emoji": "💚", "discordRoleId": "1543745983790457044" },
-        { "key": "dps", "label": "DPS", "emoji": "⚔️", "discordRoleId": "1551692472210686156" }
+        {
+          "key": "tank",
+          "label": "Tank",
+          "emoji": "🛡️",
+          "style": "primary",
+          "description": "Paper Tank Claymore",
+          "discordRoleId": "1551692400349417492"
+        },
+        {
+          "key": "healer",
+          "label": "Healer",
+          "emoji": "💚",
+          "style": "success",
+          "description": "Keep the group alive and be a goat !",
+          "discordRoleId": "1543745983790457044"
+        },
+        {
+          "key": "dps",
+          "label": "DPS",
+          "emoji": "⚔️",
+          "style": "danger",
+          "description": "Deal damage (Mgrix not allowed)",
+          "discordRoleId": "1551692472210686156"
+        }
+      ]
+    },
+    {
+      "key": "languages",
+      "label": "Languages",
+      "description": "Languages you're happy to be pinged in.",
+      "mode": "multi",
+      "color": "#1ABC9C",
+      "roles": [
+        {
+          "key": "en",
+          "label": "English",
+          "description": "The language of tea",
+          "emoji": "🇬🇧",
+          "color": "#3498DB"
+        },
+        {
+          "key": "fr",
+          "label": "Français",
+          "description": "Baguettes au croissants",
+          "emoji": "🇫🇷",
+          "color": "#9B59B6"
+        },
+        {
+          "key": "ar",
+          "label": "العربية",
+          "description": "Al3abli bih",
+          "emoji": "🇸🇦",
+          "color": "#1ABC9C"
+        }
       ]
     }
   ]

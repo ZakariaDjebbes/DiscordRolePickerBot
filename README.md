@@ -76,9 +76,48 @@ Per-group options:
 | `maxSelections` | from `mode` | Overrides the cap. `mode: "multi"` with `maxSelections: 2` means "pick up to two" |
 | `required` | `false` | A member may not drop their last pick in this group |
 | `display` | `auto` | `buttons`, `dropdown`, or `auto` (dropdown above 8 roles) |
+| `color` | blurple | Hex colour for the embed's accent bar, e.g. `"#C69B6D"` |
+| `thumbnail` | none | Image URL shown in the embed corner |
+| `footer` | "Only you can see your changes." | Replaces the default footer |
 
-Per-role options: `key`, `label`, `discordRoleId` (all required), plus optional
-`emoji` and `description` (the description shows in dropdown mode only).
+Per-role options: `key` and `label` are required; everything else is optional.
+
+| Field | Meaning |
+| --- | --- |
+| `discordRoleId` | The Discord role to grant. **Leave it out and the bot creates the role** — see below |
+| `emoji` | Unicode emoji, or a custom one as `<:name:id>` |
+| `description` | Shown under the label in dropdowns, and listed in the embed body for buttons |
+| `style` | Button colour: `primary` (blurple), `secondary` (grey, default), `success` (green), `danger` (red) |
+| `color` | Hex colour applied to the Discord role **when the bot creates it** |
+| `hoist` | Whether a created role is shown as its own group in the member list |
+
+Button colour means *which role this is*, never "you have this one". A shared
+picker message renders identically for every viewer, so it cannot show
+per-member state — use `/rolepicker mine`, or the state line in the
+confirmation, for that.
+
+### Letting the bot create the roles
+
+Omit `discordRoleId` and `/rolepicker setup` will resolve the role for you:
+
+1. an ID the bot remembered from a previous run, then
+2. an existing role whose name matches `label`, then
+3. a newly created role — with no permissions, and the `color`/`hoist` you set.
+
+The ID is recorded in the state file, so after the first setup the link is by ID
+and renaming the role in Discord no longer matters. Created roles land *below*
+the bot's own role, which means they satisfy the hierarchy requirement
+automatically.
+
+Roles are **never deleted**. Dropping one from the config leaves it in Discord,
+because deleting would strip it from every member holding it.
+
+⚠️ Because unlinked roles are matched by name, **role labels must be unique
+across the whole config**. The validator enforces this.
+
+⚠️ Creating roles happens **only** during `/rolepicker setup`. Restarting the
+bot, or running `/rolepicker check`, only reports what is missing — neither ever
+changes your server.
 
 The config is validated on startup, with errors reported against a path like
 `groups[1].roles[0].discordRoleId`. It refuses the mistakes that are painful to
@@ -137,6 +176,49 @@ The state store sits behind an interface, so moving group configuration from a
 file into a database — and editing it from Discord instead of a redeploy — does
 not touch the core.
 
+## Logs
+
+Everything the bot does is written to `logs/rolepicker.log`, one line per event:
+
+```
+2026-09-22 14:03:12.482  INFO   selection.applied   member:zakaria(240814000000000000)      Combat Role: +Healer → Tank, Healer
+2026-09-22 14:03:20.001  WARN   selection.rejected  member:Mgrix(991200000000000000)        Combat Role: allows at most 2 picks
+2026-09-22 14:05:02.115  INFO   role.created        admin:zakaria(240814000000000000)       Created "Français" (1551…) for languages/fr
+2026-09-22 14:05:02.500  ERROR  permission.denied   admin:zakaria(240814000000000000)       Cannot post in channel 1551…
+```
+
+`timestamp · level · event · actor · message`. The **event** column is a stable
+key, so it stays greppable while the message stays readable:
+
+```bash
+tail -f logs/rolepicker.log                      # follow live
+grep selection.applied logs/rolepicker.log       # every role change
+grep -E "ERROR|WARN"   logs/rolepicker.log       # everything that went wrong
+grep "240814000000000000" logs/rolepicker.log    # one member's history
+```
+
+Events: `selection.applied`, `selection.rejected`, `selection.noop` (debug
+only), `command.invoked`, `role.created`, `role.matched`, `role.unresolved`,
+`setup.completed`, `setup.failed`, `setup.blocked`, `permission.denied`,
+`bot.starting`, `bot.ready`, `bot.guild_missing`, `config.loaded`,
+`error.unhandled`.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. `debug` also records clicks that changed nothing |
+| `LOG_FILE` | `./logs/rolepicker.log` | Empty value logs to the console only |
+| `LOG_MAX_SIZE_MB` | `5` | Rotate once the file passes this size |
+| `LOG_MAX_FILES` | `5` | Rotated files kept as `.1` … `.5`, oldest dropped |
+| `TZ` | UTC in containers | Timestamps follow it — set e.g. `Europe/Paris` for local time |
+
+Entries also go to stdout, so `docker compose logs -f` keeps working.
+
+⚠️ **The log file records Discord usernames and IDs.** `logs/` is gitignored for
+that reason. If members ask what is kept about them, this is the file.
+
+Logging never throws: if the file cannot be written, the bot warns once on the
+console and carries on. A failed log write can never break a role change.
+
 ## Running with Docker
 
 The bot only makes outbound connections to Discord's gateway, so there is no
@@ -169,6 +251,12 @@ docker compose restart
 | --- | --- | --- |
 | `config/roles.json` | bind, read-only | Read at startup; edit it on the host |
 | `/app/data` | named volume `picker-state` | Written at runtime |
+| `/app/logs` | bind to `./logs` | So `tail -f logs/rolepicker.log` works on the host |
+
+The `logs/` directory is committed (as an empty `.gitkeep`) so Docker does not
+create the bind-mount source as root, which would lock out the container's
+unprivileged user. If logging stops with a permissions warning, check that
+`logs/` is writable by UID 1000.
 
 ⚠️ **The `picker-state` volume must survive container recreation.** It maps each
 group to the message holding its picker. Lose it and the next
