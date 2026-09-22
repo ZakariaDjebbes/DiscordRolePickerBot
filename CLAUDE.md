@@ -149,6 +149,28 @@ Discord server rather than in CI.
   instead of editing the first, and both keep working. Anything that changes
   where state lives needs to keep this guarantee.
 
+## Standing request from the user
+
+Carry these into the **next change to the picker's presentation**, without
+being asked again (agreed 2026-09-22). They are additive and must keep existing
+`config/roles.json` files loading unchanged:
+
+1. **Embed colour per group** — a `color` config field and `.setColor()`. Its
+   absence is why the picker renders with no accent bar.
+2. **Per-role button colour** — a `style` config field instead of every button
+   being hardcoded `ButtonStyle.Secondary`. Colour means *role identity* on the
+   shared message, never selection state; a personalized panel must show state
+   with a `✓` prefix instead, or the two meanings collide.
+3. **One-line instructions** — `bodyText()` currently stacks the group
+   description, the rules line and a redundant "Click a button to add or
+   remove it."
+4. **Footer and thumbnail** on the embed.
+5. **Render role descriptions in button mode** — `role.description` is
+   currently only used by dropdowns and is silently dropped for buttons.
+6. **State line in the ephemeral confirmation** — e.g.
+   `Now: ✅ Tank · ✅ Healer · ⬜ DPS`, built from `heldRoles()` after the plan
+   is applied.
+
 ## Project state
 
 The repository was created empty, so the initial branch
