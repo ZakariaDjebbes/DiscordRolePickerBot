@@ -3,6 +3,7 @@ import {
   DISCORD_LIMITS,
   resolveDisplay,
   resolveMaxSelections,
+  type RoleButtonStyle,
   type RoleGroup,
   type RolePickerConfig,
   type SelectableRole,
@@ -17,6 +18,8 @@ export class ConfigError extends Error {
 
 const SNOWFLAKE = /^\d{17,20}$/;
 const KEY = /^[a-z0-9][a-z0-9-]*$/;
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const BUTTON_STYLES: readonly RoleButtonStyle[] = ["primary", "secondary", "success", "danger"];
 
 /**
  * Validates a parsed config and returns it typed.
@@ -41,11 +44,12 @@ export function validateConfig(raw: unknown): RolePickerConfig {
 
   const seenGroupKeys = new Set<string>();
   const seenRoleIds = new Map<string, string>();
+  const seenRoleLabels = new Map<string, string>();
   const validated: RoleGroup[] = [];
 
   groups.forEach((group, index) => {
     const path = `groups[${index}]`;
-    validated.push(validateGroup(group, path, seenGroupKeys, seenRoleIds));
+    validated.push(validateGroup(group, path, seenGroupKeys, seenRoleIds, seenRoleLabels));
   });
 
   return { channelId, groups: validated };
@@ -56,6 +60,7 @@ function validateGroup(
   path: string,
   seenGroupKeys: Set<string>,
   seenRoleIds: Map<string, string>,
+  seenRoleLabels: Map<string, string>,
 ): RoleGroup {
   if (!isRecord(raw)) throw new ConfigError(`${path} must be an object.`);
 
@@ -67,6 +72,9 @@ function validateGroup(
 
   const label = requireString(raw["label"], `${path}.label`, 256);
   const description = optionalString(raw["description"], `${path}.description`, 2048);
+  const footer = optionalString(raw["footer"], `${path}.footer`, 2048);
+  const thumbnail = optionalUrl(raw["thumbnail"], `${path}.thumbnail`);
+  const color = optionalHexColor(raw["color"], `${path}.color`);
 
   const mode = raw["mode"];
   if (mode !== "multi" && mode !== "exclusive") {
@@ -87,7 +95,14 @@ function validateGroup(
 
   const seenRoleKeys = new Set<string>();
   const roles: SelectableRole[] = rawRoles.map((role, index) =>
-    validateRole(role, `${path}.roles[${index}]`, key, seenRoleKeys, seenRoleIds),
+    validateRole(
+      role,
+      `${path}.roles[${index}]`,
+      key,
+      seenRoleKeys,
+      seenRoleIds,
+      seenRoleLabels,
+    ),
   );
 
   const maxSelections = raw["maxSelections"];
@@ -115,6 +130,9 @@ function validateGroup(
     mode,
     roles,
     ...(description !== undefined ? { description } : {}),
+    ...(footer !== undefined ? { footer } : {}),
+    ...(thumbnail !== undefined ? { thumbnail } : {}),
+    ...(color !== undefined ? { color } : {}),
     ...(resolvedMax !== undefined ? { maxSelections: resolvedMax } : {}),
     ...(required !== undefined ? { required } : {}),
     ...(display !== "auto" ? { display } : {}),
@@ -144,6 +162,7 @@ function validateRole(
   groupKey: string,
   seenRoleKeys: Set<string>,
   seenRoleIds: Map<string, string>,
+  seenRoleLabels: Map<string, string>,
 ): SelectableRole {
   if (!isRecord(raw)) throw new ConfigError(`${path} must be an object.`);
 
@@ -156,30 +175,58 @@ function validateRole(
   const label = requireString(raw["label"], `${path}.label`, 80);
   const emoji = optionalString(raw["emoji"], `${path}.emoji`, 64);
   const description = optionalString(raw["description"], `${path}.description`, 100);
+  const color = optionalHexColor(raw["color"], `${path}.color`);
+  const hoist = optionalBoolean(raw["hoist"], `${path}.hoist`);
 
-  const discordRoleId = raw["discordRoleId"];
-  if (typeof discordRoleId !== "string" || !SNOWFLAKE.test(discordRoleId)) {
-    throw new ConfigError(
-      `${path}.discordRoleId must be a Discord role ID (17-20 digits). Server Settings -> Roles -> right-click the role -> Copy Role ID.`,
-    );
+  const rawStyle = raw["style"];
+  let style: RoleButtonStyle | undefined;
+  if (rawStyle !== undefined) {
+    if (typeof rawStyle !== "string" || !BUTTON_STYLES.includes(rawStyle as RoleButtonStyle)) {
+      throw new ConfigError(`${path}.style must be one of ${BUTTON_STYLES.join(", ")}.`);
+    }
+    style = rawStyle as RoleButtonStyle;
   }
 
-  // The same Discord role in two groups means one group's rules can silently
-  // undo the other's. Catch it here rather than in a confused bug report.
-  const owner = seenRoleIds.get(discordRoleId);
-  if (owner !== undefined) {
+  // Roles the bot will resolve or create are matched by label, so two roles
+  // sharing a name would race for the same Discord role.
+  const labelOwner = seenRoleLabels.get(label.toLowerCase());
+  if (labelOwner !== undefined) {
     throw new ConfigError(
-      `${path}.discordRoleId ${discordRoleId} is already used by group "${owner}". A Discord role may only belong to one group.`,
+      `${path}.label "${label}" is already used by group "${labelOwner}". Role names must be unique, because roles without a discordRoleId are matched to Discord by name.`,
     );
   }
-  seenRoleIds.set(discordRoleId, groupKey);
+  seenRoleLabels.set(label.toLowerCase(), groupKey);
+
+  const rawRoleId = raw["discordRoleId"];
+  let discordRoleId: string | undefined;
+  if (rawRoleId !== undefined) {
+    if (typeof rawRoleId !== "string" || !SNOWFLAKE.test(rawRoleId)) {
+      throw new ConfigError(
+        `${path}.discordRoleId must be a Discord role ID (17-20 digits), or left out entirely so the bot creates the role. Server Settings -> Roles -> right-click the role -> Copy Role ID.`,
+      );
+    }
+
+    // The same Discord role in two groups means one group's rules can silently
+    // undo the other's. Catch it here rather than in a confused bug report.
+    const owner = seenRoleIds.get(rawRoleId);
+    if (owner !== undefined) {
+      throw new ConfigError(
+        `${path}.discordRoleId ${rawRoleId} is already used by group "${owner}". A Discord role may only belong to one group.`,
+      );
+    }
+    seenRoleIds.set(rawRoleId, groupKey);
+    discordRoleId = rawRoleId;
+  }
 
   return {
     key,
     label,
-    discordRoleId,
+    ...(discordRoleId !== undefined ? { discordRoleId } : {}),
     ...(emoji !== undefined ? { emoji } : {}),
     ...(description !== undefined ? { description } : {}),
+    ...(style !== undefined ? { style } : {}),
+    ...(color !== undefined ? { color } : {}),
+    ...(hoist !== undefined ? { hoist } : {}),
   };
 }
 
@@ -237,4 +284,22 @@ function optionalBoolean(value: unknown, path: string): boolean | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") throw new ConfigError(`${path} must be true or false.`);
   return value;
+}
+
+function optionalHexColor(value: unknown, path: string): string | undefined {
+  if (value === undefined) return undefined;
+  const color = requireString(value, path, 7);
+  if (!HEX_COLOR.test(color)) {
+    throw new ConfigError(`${path} must be a hex colour like "#c41e3a", got "${color}".`);
+  }
+  return color;
+}
+
+function optionalUrl(value: unknown, path: string): string | undefined {
+  if (value === undefined) return undefined;
+  const url = requireString(value, path, 2048);
+  if (!/^https?:\/\//.test(url)) {
+    throw new ConfigError(`${path} must be an http(s) URL, got "${url}".`);
+  }
+  return url;
 }

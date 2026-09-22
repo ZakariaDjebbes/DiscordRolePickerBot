@@ -5,14 +5,15 @@ import {
   type Interaction,
   type RepliableInteraction,
 } from "discord.js";
-import type { RoleGroup, RolePickerConfig } from "../config/types.js";
+import type { ResolvedGroup } from "../config/types.js";
 import {
-  describePlan,
+  describePlanWithState,
   planButtonClick,
   planMenuSubmit,
   type SelectionPlan,
 } from "../core/selection.js";
 import { parseComponentId } from "../ui/customId.js";
+import type { RoleRegistry } from "./registry.js";
 
 /**
  * Routes every picker component through the same path: find the group, ask the
@@ -20,14 +21,15 @@ import { parseComponentId } from "../ui/customId.js";
  */
 export async function handleInteraction(
   interaction: Interaction,
-  config: RolePickerConfig,
+  registry: RoleRegistry,
 ): Promise<void> {
   if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
 
   const ref = parseComponentId(interaction.customId);
   if (ref === null) return;
 
-  const group = config.groups.find((candidate) => candidate.key === ref.groupKey);
+  const config = registry.resolved;
+  const group = config?.groups.find((candidate) => candidate.key === ref.groupKey);
   if (group === undefined) {
     await replyPrivately(
       interaction,
@@ -71,13 +73,13 @@ export async function handleInteraction(
     return;
   }
 
-  await replyPrivately(interaction, describePlan(group, plan));
+  await replyPrivately(interaction, describePlanWithState(group, plan, currentRoleIds));
 }
 
 async function applyPlan(
   member: GuildMember,
   plan: SelectionPlan,
-  group: RoleGroup,
+  group: ResolvedGroup,
 ): Promise<void> {
   if (plan.add.length === 0 && plan.remove.length === 0) return;
 
@@ -90,7 +92,7 @@ async function applyPlan(
   await member.roles.set([...next], `Role picker: ${group.key}`);
 }
 
-function explainFailure(error: unknown, group: RoleGroup): string {
+function explainFailure(error: unknown, group: ResolvedGroup): string {
   if (error instanceof DiscordAPIError && error.code === 50013) {
     return `I don't have permission to change your **${group.label}** roles. An admin needs to move my role above them in Server Settings -> Roles.`;
   }

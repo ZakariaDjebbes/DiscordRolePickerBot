@@ -6,10 +6,59 @@
       "label": "Combat Role",
       "description": "What you play in raids and dungeons.",
       "mode": "multi",
+      "color": "#C69B6D",
       "roles": [
-        { "key": "tank", "label": "Tank", "emoji": "🛡️", "discordRoleId": "1551692400349417492" },
-        { "key": "healer", "label": "Healer", "emoji": "💚", "discordRoleId": "1543745983790457044" },
-        { "key": "dps", "label": "DPS", "emoji": "⚔️", "discordRoleId": "1551692472210686156" }
+        {
+          "key": "tank",
+          "label": "Tank",
+          "emoji": "🛡️",
+          "style": "primary",
+          "description": "Hold threat and take the hits",
+          "discordRoleId": "1551692400349417492"
+        },
+        {
+          "key": "healer",
+          "label": "Healer",
+          "emoji": "💚",
+          "style": "success",
+          "description": "Keep the group alive",
+          "discordRoleId": "1543745983790457044"
+        },
+        {
+          "key": "dps",
+          "label": "DPS",
+          "emoji": "⚔️",
+          "style": "danger",
+          "description": "Deal damage",
+          "discordRoleId": "1551692472210686156"
+        }
+      ]
+    },
+    {
+      "key": "languages",
+      "label": "Languages",
+      "description": "Languages you're happy to be pinged in.",
+      "mode": "multi",
+      "color": "#1ABC9C",
+      "roles": [
+        {
+          "key": "en",
+          "label": "English",
+          "emoji": "🇬🇧",
+          "color": "#3498DB"
+        },
+        {
+          "key": "fr",
+          "label": "Français",
+          "emoji": "🇫🇷",
+          "color": "#9B59B6"
+        },
+        {
+          "key": "ar",
+          "label": "العربية",
+          "emoji": "🇸🇦",
+          "color": "#1ABC9C"
+        }
       ]
     }
   ]

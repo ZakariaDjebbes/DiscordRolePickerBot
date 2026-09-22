@@ -80,21 +80,42 @@ Two intents, deliberately different:
 - `planMenuSubmit` — **replace** intent. The chosen set becomes the member's
   set, diffed against what they hold.
 
-### Data flow
+### Config is validated, then resolved
+
+Two distinct stages, and the difference matters:
 
 ```
 config/roles.json
-  -> src/config/load.ts      validate once at startup
-  -> src/ui/render.ts        one message per group, buttons or dropdown
-  -> src/ui/customId.ts      rolepicker:btn:<group>:<role> | rolepicker:menu:<group>
-  -> src/bot/interactions.ts route to the group, apply, reply ephemerally
-     src/core/selection.ts   <- the rules live here
+  -> src/config/load.ts        validate SHAPE once at startup (no Discord)
+  -> src/bot/roleResolver.ts   resolve each role to a real Discord role ID
+  -> src/bot/registry.ts       holds the ResolvedConfig every handler reads
+  -> src/ui/render.ts          one message per group, buttons or dropdown
+  -> src/ui/customId.ts        rolepicker:btn:<group>:<role> | rolepicker:menu:<group>
+  -> src/bot/interactions.ts   route to the group, apply, reply ephemerally
+     src/core/selection.ts     <- the rules live here
 ```
 
+`discordRoleId` is **optional** in the config, so a validated `RolePickerConfig`
+may still name roles that do not exist in Discord. `ResolvedConfig` (every role
+carrying a real ID) is what the rest of the bot works with, and the type system
+enforces the distinction: `RoleGroup<TRole>` is generic, and `selection.ts`,
+`render.ts`, `setup.ts` and `hierarchy.ts` all take `ResolvedGroup`/
+`ResolvedConfig`. Do not weaken those signatures back to the unresolved type.
+
+Resolution order per role, first hit wins: explicit `discordRoleId` → an ID the
+bot remembered → a guild role whose name equals `label` → a newly created role.
+Steps 2-4 record the ID in the state store, so after the first resolution the
+link is by ID and renaming the role in Discord no longer breaks it.
+
+**Creating roles only ever happens in `/rolepicker setup`** (`create: true`).
+Startup and `/rolepicker check` resolve with `create: false` and merely report
+what is missing — a restart must never mutate the server.
+
 `src/state/store.ts` maps `groupKey -> messageId` so `/rolepicker setup` edits
-messages in place instead of posting duplicates. It sits behind a `StateStore`
-interface because the likely next step is a database once groups become editable
-from Discord rather than from a file.
+messages in place instead of posting duplicates, and `groupKey:roleKey -> roleId`
+for roles the bot resolved or created. It sits behind a `StateStore` interface
+because the likely next step is a database once groups become editable from
+Discord rather than from a file.
 
 ## Invariants
 
@@ -105,6 +126,18 @@ Discord server rather than in CI.
   config — no re-checking for duplicate keys or missing fields in handlers. New
   config fields get validated in `src/config/load.ts` with a path-style error
   message (`groups[1].roles[0].discordRoleId`).
+- **Role labels are unique across the whole config.** A role without an explicit
+  `discordRoleId` is matched to Discord by name, so two roles sharing a label
+  would race for the same Discord role. Enforced in validation.
+- **Creating roles is confined to `/rolepicker setup`.** Startup and
+  `/rolepicker check` pass `create: false`. Nothing that runs automatically may
+  mutate the server.
+- **Created roles get `permissions: []` explicitly.** These are organisational
+  labels; a role that silently carried permissions would be a security problem.
+- **Button colour means role identity, never selection state.** A shared picker
+  message renders identically for every viewer and cannot show per-member
+  state. Anything that does show state (an ephemeral panel) must mark it another
+  way, such as a leading tick — otherwise the two meanings of colour collide.
 - **Config keys are capped at 32 characters** so `rolepicker:btn:<group>:<role>`
   stays inside Discord's 100-char `custom_id` limit. Changing the custom_id
   format means rechecking that budget.
@@ -144,32 +177,14 @@ Discord server rather than in CI.
 - **Setup does not delete anything.** Groups dropped from the config are
   reported as orphaned; removing the message is an admin's call.
 - **The state file must survive container recreation.** In Docker it lives on
-  the `picker-state` named volume. Losing it does not break anything loudly —
-  the next `/rolepicker setup` simply posts a second set of picker messages
-  instead of editing the first, and both keep working. Anything that changes
-  where state lives needs to keep this guarantee.
-
-## Standing request from the user
-
-Carry these into the **next change to the picker's presentation**, without
-being asked again (agreed 2026-09-22). They are additive and must keep existing
-`config/roles.json` files loading unchanged:
-
-1. **Embed colour per group** — a `color` config field and `.setColor()`. Its
-   absence is why the picker renders with no accent bar.
-2. **Per-role button colour** — a `style` config field instead of every button
-   being hardcoded `ButtonStyle.Secondary`. Colour means *role identity* on the
-   shared message, never selection state; a personalized panel must show state
-   with a `✓` prefix instead, or the two meanings collide.
-3. **One-line instructions** — `bodyText()` currently stacks the group
-   description, the rules line and a redundant "Click a button to add or
-   remove it."
-4. **Footer and thumbnail** on the embed.
-5. **Render role descriptions in button mode** — `role.description` is
-   currently only used by dropdowns and is silently dropped for buttons.
-6. **State line in the ephemeral confirmation** — e.g.
-   `Now: ✅ Tank · ✅ Healer · ⬜ DPS`, built from `heldRoles()` after the plan
-   is applied.
+  the `picker-state` named volume. It now holds resolved role IDs as well as
+  message IDs, so losing it costs more than it used to: the next
+  `/rolepicker setup` posts a second set of picker messages, and roles without
+  an explicit `discordRoleId` fall back to matching by name — which creates a
+  *duplicate role* if someone renamed it in Discord meanwhile. Still quiet
+  rather than loud, which is what makes it worth guarding.
+- **Setup never deletes a role.** A role dropped from the config is reported,
+  not removed: deleting it would strip it from every member holding it.
 
 ## Project state
 

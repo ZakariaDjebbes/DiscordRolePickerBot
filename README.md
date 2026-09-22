@@ -76,9 +76,48 @@ Per-group options:
 | `maxSelections` | from `mode` | Overrides the cap. `mode: "multi"` with `maxSelections: 2` means "pick up to two" |
 | `required` | `false` | A member may not drop their last pick in this group |
 | `display` | `auto` | `buttons`, `dropdown`, or `auto` (dropdown above 8 roles) |
+| `color` | blurple | Hex colour for the embed's accent bar, e.g. `"#C69B6D"` |
+| `thumbnail` | none | Image URL shown in the embed corner |
+| `footer` | "Only you can see your changes." | Replaces the default footer |
 
-Per-role options: `key`, `label`, `discordRoleId` (all required), plus optional
-`emoji` and `description` (the description shows in dropdown mode only).
+Per-role options: `key` and `label` are required; everything else is optional.
+
+| Field | Meaning |
+| --- | --- |
+| `discordRoleId` | The Discord role to grant. **Leave it out and the bot creates the role** — see below |
+| `emoji` | Unicode emoji, or a custom one as `<:name:id>` |
+| `description` | Shown under the label in dropdowns, and listed in the embed body for buttons |
+| `style` | Button colour: `primary` (blurple), `secondary` (grey, default), `success` (green), `danger` (red) |
+| `color` | Hex colour applied to the Discord role **when the bot creates it** |
+| `hoist` | Whether a created role is shown as its own group in the member list |
+
+Button colour means *which role this is*, never "you have this one". A shared
+picker message renders identically for every viewer, so it cannot show
+per-member state — use `/rolepicker mine`, or the state line in the
+confirmation, for that.
+
+### Letting the bot create the roles
+
+Omit `discordRoleId` and `/rolepicker setup` will resolve the role for you:
+
+1. an ID the bot remembered from a previous run, then
+2. an existing role whose name matches `label`, then
+3. a newly created role — with no permissions, and the `color`/`hoist` you set.
+
+The ID is recorded in the state file, so after the first setup the link is by ID
+and renaming the role in Discord no longer matters. Created roles land *below*
+the bot's own role, which means they satisfy the hierarchy requirement
+automatically.
+
+Roles are **never deleted**. Dropping one from the config leaves it in Discord,
+because deleting would strip it from every member holding it.
+
+⚠️ Because unlinked roles are matched by name, **role labels must be unique
+across the whole config**. The validator enforces this.
+
+⚠️ Creating roles happens **only** during `/rolepicker setup`. Restarting the
+bot, or running `/rolepicker check`, only reports what is missing — neither ever
+changes your server.
 
 The config is validated on startup, with errors reported against a path like
 `groups[1].roles[0].discordRoleId`. It refuses the mistakes that are painful to

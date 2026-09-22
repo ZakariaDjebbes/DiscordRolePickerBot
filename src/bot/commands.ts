@@ -5,10 +5,11 @@ import {
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
 } from "discord.js";
-import type { RolePickerConfig } from "../config/types.js";
 import type { StateStore } from "../state/store.js";
-import { heldRoles } from "../core/selection.js";
+import { formatGroupState } from "../core/selection.js";
 import { checkSetupReadiness } from "./hierarchy.js";
+import type { RoleRegistry } from "./registry.js";
+import type { ResolutionResult } from "./roleResolver.js";
 import { runSetup } from "./setup.js";
 
 export const rolePickerCommand = new SlashCommandBuilder()
@@ -20,12 +21,12 @@ export const rolePickerCommand = new SlashCommandBuilder()
   .addSubcommand((sub) =>
     sub
       .setName("setup")
-      .setDescription("Post or refresh the picker messages from the config file"),
+      .setDescription("Post or refresh the picker, creating any roles that do not exist yet"),
   )
   .addSubcommand((sub) =>
     sub
       .setName("check")
-      .setDescription("Verify the bot can actually assign every configured role"),
+      .setDescription("Verify the bot can assign every configured role, without changing anything"),
   )
   .addSubcommand((sub) =>
     sub.setName("mine").setDescription("Show the roles you currently hold in each group"),
@@ -33,18 +34,18 @@ export const rolePickerCommand = new SlashCommandBuilder()
 
 export async function handleCommand(
   interaction: ChatInputCommandInteraction,
-  config: RolePickerConfig,
+  registry: RoleRegistry,
   store: StateStore,
 ): Promise<void> {
   if (interaction.commandName !== rolePickerCommand.name) return;
 
   switch (interaction.options.getSubcommand()) {
     case "setup":
-      return handleSetup(interaction, config, store);
+      return handleSetup(interaction, registry, store);
     case "check":
-      return handleCheck(interaction, config);
+      return handleCheck(interaction, registry);
     case "mine":
-      return handleMine(interaction, config);
+      return handleMine(interaction, registry);
     default:
       await interaction.reply({ content: "Unknown subcommand.", flags: MessageFlags.Ephemeral });
   }
@@ -52,7 +53,7 @@ export async function handleCommand(
 
 async function handleSetup(
   interaction: ChatInputCommandInteraction,
-  config: RolePickerConfig,
+  registry: RoleRegistry,
   store: StateStore,
 ): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -63,9 +64,11 @@ async function handleSetup(
     return;
   }
 
-  // Posting a picker whose roles the bot cannot grant just moves the failure to
-  // the first member who clicks, so refuse up front.
-  const problems = await checkSetupReadiness(guild, config);
+  // Setup is the one explicit admin action, so it is where missing roles get
+  // created — never as a side effect of the bot restarting.
+  const resolution = await registry.refresh(guild, { create: true });
+
+  const problems = await checkSetupReadiness(guild, resolution.config);
   if (problems.length > 0) {
     await interaction.editReply(
       ["Setup stopped — fix these first:", ...problems.map((p) => `• ${p.message}`)].join("\n"),
@@ -74,8 +77,18 @@ async function handleSetup(
   }
 
   try {
-    const result = await runSetup(interaction.client, config, store);
-    const lines = [`Picker is live in <#${config.channelId}>.`];
+    const result = await runSetup(interaction.client, resolution.config, store);
+    const lines = [`Picker is live in <#${resolution.config.channelId}>.`];
+
+    const created = resolution.entries.filter((entry) => entry.source === "created");
+    const matched = resolution.entries.filter((entry) => entry.source === "matched");
+    if (created.length > 0) {
+      lines.push(`Created roles: ${created.map((entry) => entry.label).join(", ")}`);
+    }
+    if (matched.length > 0) {
+      lines.push(`Linked existing roles by name: ${matched.map((e) => e.label).join(", ")}`);
+    }
+
     if (result.posted.length > 0) lines.push(`Posted: ${result.posted.join(", ")}`);
     if (result.edited.length > 0) lines.push(`Updated: ${result.edited.join(", ")}`);
     if (result.orphaned.length > 0) {
@@ -83,13 +96,15 @@ async function handleSetup(
         `Left over from removed groups (delete the messages by hand if you want them gone): ${result.orphaned.join(", ")}`,
       );
     }
+    lines.push(...resolutionWarnings(resolution));
+
     await interaction.editReply(lines.join("\n"));
   } catch (error) {
     // The preflight above catches this in the normal case; a permission changed
     // mid-run still deserves better than Discord's bare "Missing Permissions".
     if (error instanceof DiscordAPIError && error.code === 50013) {
       await interaction.editReply(
-        `Setup failed: Discord refused to let the bot post in <#${config.channelId}>. Check the channel's own permissions (Edit Channel -> Permissions) for "View Channel", "Send Messages" and "Embed Links" — channel overwrites beat the invite link's permissions.`,
+        `Setup failed: Discord refused to let the bot post in <#${resolution.config.channelId}>. Check the channel's own permissions (Edit Channel -> Permissions) for "View Channel", "Send Messages" and "Embed Links" — channel overwrites beat the invite link's permissions.`,
       );
       return;
     }
@@ -99,7 +114,7 @@ async function handleSetup(
 
 async function handleCheck(
   interaction: ChatInputCommandInteraction,
-  config: RolePickerConfig,
+  registry: RoleRegistry,
 ): Promise<void> {
   const guild = interaction.guild;
   if (guild === null) {
@@ -112,22 +127,51 @@ async function handleCheck(
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const problems = await checkSetupReadiness(guild, config);
-  const roleCount = config.groups.reduce((total, group) => total + group.roles.length, 0);
+  // create: false — check reports, it never changes the server.
+  const resolution = await registry.refresh(guild, { create: false });
+  const problems = await checkSetupReadiness(guild, resolution.config);
 
-  const content =
-    problems.length === 0
-      ? `All good — ${config.groups.length} group(s), ${roleCount} role(s), all assignable, and the bot can post in <#${config.channelId}>.`
-      : ["Problems found:", ...problems.map((p) => `• ${p.message}`)].join("\n");
+  const lines: string[] = [];
+  const roleCount = resolution.entries.length;
 
-  await interaction.editReply(content);
+  if (problems.length === 0 && resolution.unresolved.length === 0) {
+    lines.push(
+      `All good — ${resolution.config.groups.length} group(s), ${roleCount} role(s), all assignable, and the bot can post in <#${resolution.config.channelId}>.`,
+    );
+  } else {
+    if (problems.length > 0) {
+      lines.push("Problems found:", ...problems.map((p) => `• ${p.message}`));
+    }
+    lines.push(...resolutionWarnings(resolution));
+  }
+
+  await interaction.editReply(lines.join("\n"));
+}
+
+/** Roles that could not be resolved, and groups left unrenderable as a result. */
+function resolutionWarnings(resolution: ResolutionResult): string[] {
+  const lines: string[] = [];
+  if (resolution.unresolved.length > 0) {
+    lines.push(
+      "Roles not resolved yet:",
+      ...resolution.unresolved.map((entry) => `• ${entry.label} — ${entry.reason}`),
+    );
+  }
+  if (resolution.emptyGroupKeys.length > 0) {
+    lines.push(
+      `Groups skipped because none of their roles resolved: ${resolution.emptyGroupKeys.join(", ")}`,
+    );
+  }
+  return lines;
 }
 
 async function handleMine(
   interaction: ChatInputCommandInteraction,
-  config: RolePickerConfig,
+  registry: RoleRegistry,
 ): Promise<void> {
   const member = interaction.member;
+  const config = registry.resolved;
+
   if (member === null || !("roles" in member) || typeof member.roles === "string") {
     await interaction.reply({
       content: "This command only works inside a server.",
@@ -136,14 +180,20 @@ async function handleMine(
     return;
   }
 
+  if (config === undefined) {
+    await interaction.reply({
+      content: "The picker has not been set up yet — run `/rolepicker setup`.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
   const currentRoleIds =
     "cache" in member.roles ? member.roles.cache.map((role) => role.id) : member.roles;
 
-  const lines = config.groups.map((group) => {
-    const held = heldRoles(group, currentRoleIds);
-    const picks = held.length === 0 ? "_nothing picked_" : held.map((r) => r.label).join(", ");
-    return `**${group.label}**: ${picks}`;
-  });
+  const lines = config.groups.map(
+    (group) => `**${group.label}**\n${formatGroupState(group, currentRoleIds)}`,
+  );
 
-  await interaction.reply({ content: lines.join("\n"), flags: MessageFlags.Ephemeral });
+  await interaction.reply({ content: lines.join("\n\n"), flags: MessageFlags.Ephemeral });
 }

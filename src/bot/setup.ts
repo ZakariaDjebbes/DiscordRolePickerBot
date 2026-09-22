@@ -1,5 +1,5 @@
 import { ChannelType, type Client, type TextChannel } from "discord.js";
-import type { RolePickerConfig } from "../config/types.js";
+import type { ResolvedConfig } from "../config/types.js";
 import type { StateStore } from "../state/store.js";
 import { renderGroup } from "../ui/render.js";
 
@@ -17,7 +17,7 @@ export interface SetupResult {
  */
 export async function runSetup(
   client: Client,
-  config: RolePickerConfig,
+  config: ResolvedConfig,
   store: StateStore,
 ): Promise<SetupResult> {
   const channel = await client.channels.fetch(config.channelId);

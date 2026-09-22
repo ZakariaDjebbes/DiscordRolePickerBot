@@ -1,4 +1,4 @@
-import { resolveMaxSelections, type RoleGroup, type SelectableRole } from "../config/types.js";
+import { resolveMaxSelections, type ResolvedGroup, type ResolvedRole } from "../config/types.js";
 
 /**
  * What a click should do to a member's roles.
@@ -26,9 +26,23 @@ function reject(reason: string): SelectionPlan {
 }
 
 /** The roles of this group the member currently holds, in config order. */
-export function heldRoles(group: RoleGroup, currentRoleIds: Iterable<string>): SelectableRole[] {
+export function heldRoles(group: ResolvedGroup, currentRoleIds: Iterable<string>): ResolvedRole[] {
   const current = new Set(currentRoleIds);
   return group.roles.filter((role) => current.has(role.discordRoleId));
+}
+
+/**
+ * The roles a member holds once a plan is applied. Used to show their resulting
+ * picks without waiting for Discord to report the change back.
+ */
+export function rolesAfterPlan(
+  currentRoleIds: Iterable<string>,
+  plan: SelectionPlan,
+): Set<string> {
+  const next = new Set(currentRoleIds);
+  for (const roleId of plan.remove) next.delete(roleId);
+  for (const roleId of plan.add) next.add(roleId);
+  return next;
 }
 
 /**
@@ -43,7 +57,7 @@ export function heldRoles(group: RoleGroup, currentRoleIds: Iterable<string>): S
  *     The member is told to remove one first.
  */
 export function planButtonClick(
-  group: RoleGroup,
+  group: ResolvedGroup,
   currentRoleIds: Iterable<string>,
   clickedRoleKey: string,
 ): SelectionPlan {
@@ -84,11 +98,11 @@ export function planButtonClick(
  * declaring the exact set they want, so we diff against what they hold.
  */
 export function planMenuSubmit(
-  group: RoleGroup,
+  group: ResolvedGroup,
   currentRoleIds: Iterable<string>,
   selectedRoleKeys: readonly string[],
 ): SelectionPlan {
-  const selected: SelectableRole[] = [];
+  const selected: ResolvedRole[] = [];
   for (const key of new Set(selectedRoleKeys)) {
     const role = group.roles.find((candidate) => candidate.key === key);
     if (role === undefined) {
@@ -122,12 +136,26 @@ export function planMenuSubmit(
 }
 
 /**
+ * Every role in the group, ticked or not — so a member can see their whole
+ * standing in one line rather than inferring it from what just changed.
+ */
+export function formatGroupState(
+  group: ResolvedGroup,
+  roleIds: Iterable<string>,
+): string {
+  const held = new Set(roleIds);
+  return group.roles
+    .map((role) => `${held.has(role.discordRoleId) ? "✅" : "⬜"} ${role.label}`)
+    .join(" · ");
+}
+
+/**
  * The member-facing confirmation.
  *
  * Exclusive groups take roles away that the member never asked to lose, so the
  * removal is always named rather than folded into a bare "Done".
  */
-export function describePlan(group: RoleGroup, plan: SelectionPlan): string {
+export function describePlan(group: ResolvedGroup, plan: SelectionPlan): string {
   if (plan.rejection !== undefined) return plan.rejection;
 
   const nameOf = (roleId: string): string =>
@@ -146,6 +174,17 @@ export function describePlan(group: RoleGroup, plan: SelectionPlan): string {
     return `Added ${list(added)} to your **${group.label}**.`;
   }
   return `Removed ${list(removed)} from your **${group.label}**.`;
+}
+
+/** The confirmation plus the member's resulting picks across the whole group. */
+export function describePlanWithState(
+  group: ResolvedGroup,
+  plan: SelectionPlan,
+  currentRoleIds: Iterable<string>,
+): string {
+  const summary = describePlan(group, plan);
+  if (plan.rejection !== undefined) return summary;
+  return `${summary}\nNow: ${formatGroupState(group, rolesAfterPlan(currentRoleIds, plan))}`;
 }
 
 function list(labels: string[]): string {
