@@ -176,6 +176,49 @@ The state store sits behind an interface, so moving group configuration from a
 file into a database — and editing it from Discord instead of a redeploy — does
 not touch the core.
 
+## Logs
+
+Everything the bot does is written to `logs/rolepicker.log`, one line per event:
+
+```
+2026-09-22 14:03:12.482  INFO   selection.applied   member:zakaria(240814000000000000)      Combat Role: +Healer → Tank, Healer
+2026-09-22 14:03:20.001  WARN   selection.rejected  member:Mgrix(991200000000000000)        Combat Role: allows at most 2 picks
+2026-09-22 14:05:02.115  INFO   role.created        admin:zakaria(240814000000000000)       Created "Français" (1551…) for languages/fr
+2026-09-22 14:05:02.500  ERROR  permission.denied   admin:zakaria(240814000000000000)       Cannot post in channel 1551…
+```
+
+`timestamp · level · event · actor · message`. The **event** column is a stable
+key, so it stays greppable while the message stays readable:
+
+```bash
+tail -f logs/rolepicker.log                      # follow live
+grep selection.applied logs/rolepicker.log       # every role change
+grep -E "ERROR|WARN"   logs/rolepicker.log       # everything that went wrong
+grep "240814000000000000" logs/rolepicker.log    # one member's history
+```
+
+Events: `selection.applied`, `selection.rejected`, `selection.noop` (debug
+only), `command.invoked`, `role.created`, `role.matched`, `role.unresolved`,
+`setup.completed`, `setup.failed`, `setup.blocked`, `permission.denied`,
+`bot.starting`, `bot.ready`, `bot.guild_missing`, `config.loaded`,
+`error.unhandled`.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. `debug` also records clicks that changed nothing |
+| `LOG_FILE` | `./logs/rolepicker.log` | Empty value logs to the console only |
+| `LOG_MAX_SIZE_MB` | `5` | Rotate once the file passes this size |
+| `LOG_MAX_FILES` | `5` | Rotated files kept as `.1` … `.5`, oldest dropped |
+| `TZ` | UTC in containers | Timestamps follow it — set e.g. `Europe/Paris` for local time |
+
+Entries also go to stdout, so `docker compose logs -f` keeps working.
+
+⚠️ **The log file records Discord usernames and IDs.** `logs/` is gitignored for
+that reason. If members ask what is kept about them, this is the file.
+
+Logging never throws: if the file cannot be written, the bot warns once on the
+console and carries on. A failed log write can never break a role change.
+
 ## Running with Docker
 
 The bot only makes outbound connections to Discord's gateway, so there is no
@@ -208,6 +251,12 @@ docker compose restart
 | --- | --- | --- |
 | `config/roles.json` | bind, read-only | Read at startup; edit it on the host |
 | `/app/data` | named volume `picker-state` | Written at runtime |
+| `/app/logs` | bind to `./logs` | So `tail -f logs/rolepicker.log` works on the host |
+
+The `logs/` directory is committed (as an empty `.gitkeep`) so Docker does not
+create the bind-mount source as root, which would lock out the container's
+unprivileged user. If logging stops with a permissions warning, check that
+`logs/` is writable by UID 1000.
 
 ⚠️ **The `picker-state` volume must survive container recreation.** It maps each
 group to the message holding its picker. Lose it and the next

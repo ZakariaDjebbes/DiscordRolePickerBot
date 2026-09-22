@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import type { StateStore } from "../state/store.js";
 import { formatGroupState } from "../core/selection.js";
+import { adminActor, type Actor, type Logger } from "../logging/logger.js";
 import { checkSetupReadiness } from "./hierarchy.js";
 import type { RoleRegistry } from "./registry.js";
 import type { ResolutionResult } from "./roleResolver.js";
@@ -36,14 +37,19 @@ export async function handleCommand(
   interaction: ChatInputCommandInteraction,
   registry: RoleRegistry,
   store: StateStore,
+  log: Logger,
 ): Promise<void> {
   if (interaction.commandName !== rolePickerCommand.name) return;
 
-  switch (interaction.options.getSubcommand()) {
+  const subcommand = interaction.options.getSubcommand();
+  const actor = adminActor(interaction.user.id, interaction.user.username);
+  log.info("command.invoked", actor, `/rolepicker ${subcommand}`);
+
+  switch (subcommand) {
     case "setup":
-      return handleSetup(interaction, registry, store);
+      return handleSetup(interaction, registry, store, log, actor);
     case "check":
-      return handleCheck(interaction, registry);
+      return handleCheck(interaction, registry, log, actor);
     case "mine":
       return handleMine(interaction, registry);
     default:
@@ -55,6 +61,8 @@ async function handleSetup(
   interaction: ChatInputCommandInteraction,
   registry: RoleRegistry,
   store: StateStore,
+  log: Logger,
+  actor: Actor,
 ): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -68,8 +76,20 @@ async function handleSetup(
   // created — never as a side effect of the bot restarting.
   const resolution = await registry.refresh(guild, { create: true });
 
+  for (const entry of resolution.entries) {
+    if (entry.source === "created") {
+      log.info("role.created", actor, `Created "${entry.label}" (${entry.discordRoleId}) for ${entry.groupKey}/${entry.roleKey}`);
+    } else if (entry.source === "matched") {
+      log.info("role.matched", actor, `Linked existing role "${entry.label}" (${entry.discordRoleId}) to ${entry.groupKey}/${entry.roleKey}`);
+    }
+  }
+  for (const entry of resolution.unresolved) {
+    log.warn("role.unresolved", actor, `${entry.label}: ${entry.reason}`);
+  }
+
   const problems = await checkSetupReadiness(guild, resolution.config);
   if (problems.length > 0) {
+    for (const problem of problems) log.warn("setup.blocked", actor, problem.message);
     await interaction.editReply(
       ["Setup stopped — fix these first:", ...problems.map((p) => `• ${p.message}`)].join("\n"),
     );
@@ -98,16 +118,23 @@ async function handleSetup(
     }
     lines.push(...resolutionWarnings(resolution));
 
+    log.info(
+      "setup.completed",
+      actor,
+      `${result.posted.length} posted, ${result.edited.length} updated, ${created.length} roles created`,
+    );
     await interaction.editReply(lines.join("\n"));
   } catch (error) {
     // The preflight above catches this in the normal case; a permission changed
     // mid-run still deserves better than Discord's bare "Missing Permissions".
     if (error instanceof DiscordAPIError && error.code === 50013) {
+      log.error("permission.denied", actor, `Cannot post in channel ${resolution.config.channelId}`);
       await interaction.editReply(
         `Setup failed: Discord refused to let the bot post in <#${resolution.config.channelId}>. Check the channel's own permissions (Edit Channel -> Permissions) for "View Channel", "Send Messages" and "Embed Links" — channel overwrites beat the invite link's permissions.`,
       );
       return;
     }
+    log.error("setup.failed", actor, (error as Error).message);
     await interaction.editReply(`Setup failed: ${(error as Error).message}`);
   }
 }
@@ -115,6 +142,8 @@ async function handleSetup(
 async function handleCheck(
   interaction: ChatInputCommandInteraction,
   registry: RoleRegistry,
+  log: Logger,
+  actor: Actor,
 ): Promise<void> {
   const guild = interaction.guild;
   if (guild === null) {
@@ -143,6 +172,11 @@ async function handleCheck(
       lines.push("Problems found:", ...problems.map((p) => `• ${p.message}`));
     }
     lines.push(...resolutionWarnings(resolution));
+  }
+
+  for (const problem of problems) log.warn("setup.blocked", actor, problem.message);
+  for (const entry of resolution.unresolved) {
+    log.warn("role.unresolved", actor, `${entry.label}: ${entry.reason}`);
   }
 
   await interaction.editReply(lines.join("\n"));

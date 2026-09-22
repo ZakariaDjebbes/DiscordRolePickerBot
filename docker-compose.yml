@@ -9,6 +9,12 @@ services:
       DISCORD_TOKEN: ${DISCORD_TOKEN:?set DISCORD_TOKEN in .env}
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID in .env}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?set DISCORD_GUILD_ID in .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FILE: ${LOG_FILE:-./logs/rolepicker.log}
+      LOG_MAX_SIZE_MB: ${LOG_MAX_SIZE_MB:-5}
+      LOG_MAX_FILES: ${LOG_MAX_FILES:-5}
+      # Timestamps follow this. Unset means UTC.
+      TZ: ${TZ:-UTC}
 
     volumes:
       # Edit roles on the host; the container only reads them.
@@ -17,6 +23,9 @@ services:
       # `/rolepicker setup` post duplicate messages instead of editing the
       # existing ones, so it must outlive the container.
       - picker-state:/app/data
+      # A bind mount rather than a volume, so logs are readable on the host
+      # with `tail -f logs/rolepicker.log` and no `docker exec`.
+      - ./logs:/app/logs
 
     # No ports: the gateway connection is outbound only.
 

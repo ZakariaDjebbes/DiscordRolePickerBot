@@ -117,6 +117,27 @@ for roles the bot resolved or created. It sits behind a `StateStore` interface
 because the likely next step is a database once groups become editable from
 Discord rather than from a file.
 
+### Logging
+
+`src/logging/logger.ts` is a hand-rolled file logger — no framework, because
+the project keeps two runtime dependencies and the wanted format is specific.
+Lines are `timestamp · level · event · actor · message`, written to
+`logs/rolepicker.log` with size-based rotation, and mirrored to the console so
+`docker logs` still works.
+
+- **Logging never throws.** Writes are fire-and-forget through a serialised
+  promise chain, and a failure warns once on the console then gives up. A
+  failed log write must never break a member's role change.
+- **New events go in the `LogEvent` union**, not inline at the call site — the
+  event column is the greppable half of a line.
+- **The pure parts are separate** (`formatRecord`, `formatActor`, `shouldLog`)
+  so the format is unit-tested, and rotation is tested against a temp directory.
+- **Only `src/bot/` and `src/index.ts` log.** `src/core/selection.ts` stays
+  pure and takes no logger.
+- Remaining `console.*` calls are deliberate: inside the logger itself, in the
+  top-level catch in `index.ts` (which runs before a logger exists), and in the
+  standalone `deploy-commands` script.
+
 ## Invariants
 
 These are load-bearing. Breaking one tends to fail at runtime in someone's

@@ -28,9 +28,11 @@ RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
 
-# The state file is written at runtime. Created here, owned by the unprivileged
-# user the container runs as, so a named volume inherits that ownership.
-RUN mkdir -p /app/data /app/config && chown -R node:node /app/data /app/config
+# The state file and the log file are written at runtime. Created here, owned
+# by the unprivileged user the container runs as, so a named volume inherits
+# that ownership.
+RUN mkdir -p /app/data /app/config /app/logs \
+    && chown -R node:node /app/data /app/config /app/logs
 
 USER node
 
